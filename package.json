@@ -13,6 +13,6 @@
     "@google-cloud/datastore": "^7.0.0"
   },
   "files": [
-    "lib/**/*"
+    "lib"
   ]
 }
