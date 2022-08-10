@@ -2,12 +2,6 @@ export function wait(ms: number = 1000) {
   return new Promise(res => setTimeout(res, ms));
 }
 
-//TODO in the future add a way to escape the retries based on certian response types like 400 or 403
-const retryDefaults = {
-  retries: 3,
-  backoff: 100,
-};
-
 export async function callWithRetry<T>(
   fn: () => Promise<T>,
   options?: {
