@@ -1,5 +1,6 @@
 import type { Transaction } from "@google-cloud/datastore";
 import { Datastore } from "@google-cloud/datastore";
+import { callWithRetry } from "./utils";
 
 export type QueryFilter = [
   string,
@@ -63,6 +64,12 @@ function getId(data: any): string | number {
   return Number(data[Datastore.KEY].id) || data[Datastore.KEY].name;
 }
 
+type ModelOptions = {
+  disableRetry?: boolean;
+  retries?: number;
+  backoff?: number;
+};
+
 export default function createORM(options?: {
   projectId: string;
   keyFilename: string;
@@ -71,8 +78,19 @@ export default function createORM(options?: {
   const store = new Datastore(options);
 
   function createModel<T extends { _id: string | number }>(
-    kind: string
+    kind: string,
+    options?: ModelOptions
   ): OrmModel<T> {
+    async function retry<U>(fn: () => Promise<U>) {
+      if (options?.disableRetry) return fn();
+      return callWithRetry(fn, {
+        retries: options?.retries,
+        backoff: options?.backoff,
+        escape: (error: { message: string; status: number }) =>
+          error.status > 399 && error.status < 500,
+      });
+    }
+
     async function create(
       data: Omit<T, "_id">,
       id?: string,
@@ -82,10 +100,12 @@ export default function createORM(options?: {
 
       validate?.(data);
 
-      const [response] = await store.save({
-        key,
-        data,
-      });
+      const [response] = await retry(() =>
+        store.save({
+          key,
+          data,
+        })
+      );
 
       const _id = getId(response);
 
@@ -100,7 +120,7 @@ export default function createORM(options?: {
     ): Promise<T> {
       const key = store.key([kind, id]);
 
-      const [entity] = await store.get(key);
+      const [entity] = await retry(() => store.get(key));
 
       if (!entity) throw { message: "entity not found", status: 404 };
 
@@ -135,7 +155,7 @@ export default function createORM(options?: {
       //select
       if (options?.select) query.select(options.select);
 
-      const [entities] = await store.runQuery(query);
+      const [entities] = await retry(() => store.runQuery(query));
       const entitiesWithIds = entities.map(entity => ({
         ...entity,
         _id: getId(entity),
@@ -154,7 +174,7 @@ export default function createORM(options?: {
       //TODO should we proactively strip the id
       const key = store.key([kind, id]);
 
-      const entity = await get(id);
+      const entity = await retry(() => get(id));
 
       if (!entity) throw "entity not found";
 
@@ -162,10 +182,12 @@ export default function createORM(options?: {
 
       const { _id, ...data } = entity;
 
-      await store.save({
-        key,
-        data: { ...data, ...update },
-      });
+      await retry(() =>
+        store.save({
+          key,
+          data: { ...data, ...update },
+        })
+      );
 
       return { ...data, ...update, _id: id } as T;
     }
@@ -173,13 +195,13 @@ export default function createORM(options?: {
     async function destroy(id: string | number, validate?: (entity: T) => any) {
       const key = store.key([kind, id]);
 
-      const entity = await get(id);
+      const entity = await retry(() => get(id));
 
       if (!entity) throw "entity not found";
 
       validate?.(entity);
 
-      await store.delete(key);
+      await retry(() => store.delete(key));
 
       return { message: "delete successful" };
     }
@@ -291,14 +313,16 @@ export default function createORM(options?: {
         return transaction.delete(key);
       }
 
-      try {
-        await transaction.run();
-        func({ transaction, create, get, query, update, destroy });
-        await transaction.commit();
-      } catch (error) {
-        await transaction.rollback();
-        throw error;
-      }
+      retry(async () => {
+        try {
+          await transaction.run();
+          func({ transaction, create, get, query, update, destroy });
+          await transaction.commit();
+        } catch (error) {
+          await transaction.rollback();
+          throw error;
+        }
+      });
       return;
     }
 

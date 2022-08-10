@@ -30,11 +30,17 @@ export declare type OrmModel<T> = {
     destroy: (id: string | number, validate?: (entity: T) => void) => Promise<any>;
     transaction: (func: (transaction: OrmTransaction<T>) => void) => Promise<void>;
 };
+declare type ModelOptions = {
+    disableRetry?: boolean;
+    retries?: number;
+    backoff?: number;
+};
 export default function createORM(options?: {
     projectId: string;
     keyFilename: string;
 }): {
     createModel: <T extends {
         _id: string | number;
-    }>(kind: string) => OrmModel<T>;
+    }>(kind: string, options?: ModelOptions | undefined) => OrmModel<T>;
 };
+export {};
