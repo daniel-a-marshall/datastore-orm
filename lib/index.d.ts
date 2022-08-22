@@ -16,14 +16,14 @@ export declare type QueryOptions = {
 };
 export declare type OrmTransaction<T> = {
     transaction: Transaction;
-    create: (data: Omit<T, "_id">) => void;
+    create: (data: Omit<T, "_id">, id?: string) => void;
     get: (id: string | number, validate?: (entity: T) => void) => Promise<T>;
     query: (options?: QueryOptions, validate?: (entities: T[]) => void) => Promise<T[]>;
     update: (id: string | number, change: Partial<Omit<T, "_id">>, validate?: (entity: T) => void) => void;
     destroy: (id: string | number, validate?: (entity: T) => void) => void;
 };
 export declare type OrmModel<T> = {
-    create: (data: Omit<T, "_id">) => Promise<T>;
+    create: (data: Omit<T, "_id">, id?: string) => Promise<T>;
     get: (id: string | number, validate?: (entity: T) => void) => Promise<T>;
     query: (options?: QueryOptions, validate?: (entities: T[]) => void) => Promise<T[]>;
     update: (id: string | number, change: Partial<Omit<T, "_id">>, validate?: (entity: T) => void) => Promise<T>;
