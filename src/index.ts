@@ -27,7 +27,10 @@ export type OrmTransaction<T> = {
     id?: string,
     validate?: ((entity: Omit<T, "_id">) => any) | undefined
   ) => void;
-  get: (id: string | number, validate?: (entity: T) => void) => Promise<T>;
+  get: (
+    id: string | number,
+    validate?: (entity: T) => void
+  ) => Promise<T | undefined>;
   query: (
     options?: QueryOptions,
     validate?: (entities: T[]) => void
@@ -46,7 +49,10 @@ export type OrmModel<T> = {
     id?: string,
     validate?: ((entity: Omit<T, "_id">) => any) | undefined
   ) => Promise<T>;
-  get: (id: string | number, validate?: (entity: T) => void) => Promise<T>;
+  get: (
+    id: string | number,
+    validate?: (entity: T) => void
+  ) => Promise<T | undefined>;
   query: (
     options?: QueryOptions,
     validate?: (entities: T[]) => void
@@ -125,12 +131,12 @@ export default function createORM(options?: {
     async function get(
       id: string | number,
       validate?: (entity: T) => any
-    ): Promise<T> {
+    ): Promise<T | undefined> {
       const key = store.key([kind, id]);
 
       const [entity] = await retry(() => store.get(key));
 
-      if (!entity) throw { message: "entity not found", status: 404 };
+      if (!entity) return undefined;
 
       const _id = getId(entity);
 
@@ -235,12 +241,12 @@ export default function createORM(options?: {
       async function get(
         id: string | number,
         validate?: (entity: T) => any
-      ): Promise<T> {
+      ): Promise<T | undefined> {
         const key = store.key([kind, id]);
 
         const [entity] = await transaction.get(key);
 
-        if (!entity) throw "entity not found";
+        if (!entity) return undefined;
 
         const _id = getId(entity);
 
