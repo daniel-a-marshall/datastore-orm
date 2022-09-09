@@ -22,7 +22,11 @@ export type QueryOptions = {
 
 export type OrmTransaction<T> = {
   transaction: Transaction;
-  create: (data: Omit<T, "_id">, id?: string) => void;
+  create: (
+    data: Omit<T, "_id">,
+    id?: string,
+    validate?: ((entity: Omit<T, "_id">) => any) | undefined
+  ) => void;
   get: (id: string | number, validate?: (entity: T) => void) => Promise<T>;
   query: (
     options?: QueryOptions,
@@ -37,7 +41,11 @@ export type OrmTransaction<T> = {
 };
 
 export type OrmModel<T> = {
-  create: (data: Omit<T, "_id">, id?: string) => Promise<T>;
+  create: (
+    data: Omit<T, "_id">,
+    id?: string,
+    validate?: ((entity: Omit<T, "_id">) => any) | undefined
+  ) => Promise<T>;
   get: (id: string | number, validate?: (entity: T) => void) => Promise<T>;
   query: (
     options?: QueryOptions,
