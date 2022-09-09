@@ -121,7 +121,7 @@ export default function createORM(options?: {
         })
       );
 
-      const _id = getId(response);
+      const _id = id || getId(response);
 
       if (!_id) throw "entity is missing it's id";
 
