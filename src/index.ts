@@ -147,6 +147,7 @@ export default function createORM(options?: {
       return entityWithId;
     }
 
+    //TODO need to add a way to use the cursor with limit
     async function query(
       options?: QueryOptions,
       validate?: (entities: T[]) => any
@@ -182,7 +183,9 @@ export default function createORM(options?: {
 
     async function update(
       id: string | number,
-      update: Partial<Omit<T, "_id">>,
+      update:
+        | Partial<Omit<T, "_id">>
+        | ((entity: T) => Partial<Omit<T, "_id">>),
       validate?: (entity: T) => any
     ): Promise<T> {
       //TODO should we proactively strip the id
@@ -194,16 +197,19 @@ export default function createORM(options?: {
 
       validate?.(entity);
 
+      const parsedUpdate =
+        typeof update === "function" ? update(entity) : update;
+
       const { _id, ...data } = entity;
 
       await retry(() =>
         store.save({
           key,
-          data: { ...data, ...update },
+          data: { ...data, ...parsedUpdate },
         })
       );
 
-      return { ...data, ...update, _id: id } as T;
+      return { ...data, ...parsedUpdate, _id: id } as T;
     }
 
     async function destroy(id: string | number, validate?: (entity: T) => any) {
@@ -293,7 +299,9 @@ export default function createORM(options?: {
 
       async function update(
         id: string | number,
-        update: Partial<Omit<T, "_id">>,
+        update:
+          | Partial<Omit<T, "_id">>
+          | ((entity: T) => Partial<Omit<T, "_id">>),
         validate?: (entity: T) => any
       ) {
         const key = store.key([kind, id]);
@@ -304,11 +312,14 @@ export default function createORM(options?: {
 
         validate?.(entity);
 
+        const parsedUpdate =
+          typeof update === "function" ? update(entity) : update;
+
         const { _id, ...data } = entity;
 
         return transaction.save({
           key,
-          data: { ...data, ...update },
+          data: { ...data, ...parsedUpdate },
         });
       }
 
