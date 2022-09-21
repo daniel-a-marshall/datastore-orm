@@ -37,8 +37,8 @@ export type OrmTransaction<T> = {
   ) => Promise<T[]>;
   update: (
     id: string | number,
-    change: Partial<Omit<T, "_id">>,
-    validate?: (entity: T) => void
+    update: Partial<Omit<T, "_id">> | ((entity: T) => Partial<Omit<T, "_id">>),
+    validate?: ((entity: T) => any) | undefined
   ) => void;
   destroy: (id: string | number, validate?: (entity: T) => void) => void;
 };
@@ -59,8 +59,8 @@ export type OrmModel<T> = {
   ) => Promise<T[]>;
   update: (
     id: string | number,
-    change: Partial<Omit<T, "_id">>,
-    validate?: (entity: T) => void
+    update: Partial<Omit<T, "_id">> | ((entity: T) => Partial<Omit<T, "_id">>),
+    validate?: ((entity: T) => any) | undefined
   ) => Promise<T>;
   destroy: (
     id: string | number,
