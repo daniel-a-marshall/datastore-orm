@@ -14,22 +14,6 @@ export declare type QueryOptions = {
     limit?: number;
     select?: string[];
 };
-export declare type OrmTransaction<T> = {
-    transaction: Transaction;
-    create: (data: Omit<T, "_id">, id?: string, validate?: ((entity: Omit<T, "_id">) => any) | undefined) => void;
-    get: (id: string | number, validate?: (entity: T) => void) => Promise<T | undefined>;
-    query: (options?: QueryOptions, validate?: (entities: T[]) => void) => Promise<T[]>;
-    update: (id: string | number, update: Partial<Omit<T, "_id">> | ((entity: T) => Partial<Omit<T, "_id">>), validate?: ((entity: T) => any) | undefined) => void;
-    destroy: (id: string | number, validate?: (entity: T) => void) => void;
-};
-export declare type OrmModel<T> = {
-    create: (data: Omit<T, "_id">, id?: string, validate?: ((entity: Omit<T, "_id">) => any) | undefined) => Promise<T>;
-    get: (id: string | number, validate?: (entity: T) => void) => Promise<T | undefined>;
-    query: (options?: QueryOptions, validate?: (entities: T[]) => void) => Promise<T[]>;
-    update: (id: string | number, update: Partial<Omit<T, "_id">> | ((entity: T) => Partial<Omit<T, "_id">>), validate?: ((entity: T) => any) | undefined) => Promise<T>;
-    destroy: (id: string | number, validate?: (entity: T) => void) => Promise<any>;
-    transaction: (func: (transaction: OrmTransaction<T>) => void) => Promise<void>;
-};
 declare type ModelOptions = {
     disableRetry?: boolean;
     retries?: number;
@@ -41,6 +25,47 @@ export default function createORM(options?: {
 }): {
     createModel: <T extends {
         _id: string | number;
-    }>(kind: string, options?: ModelOptions | undefined) => OrmModel<T>;
+    }>(kind: string, options?: ModelOptions | undefined) => {
+        create: (data: Omit<T, "_id">, options?: {
+            id?: string | undefined;
+            validate?: ((entity: Omit<T, "_id">) => any) | undefined;
+            transaction?: Transaction | undefined;
+        } | undefined) => Promise<T>;
+        get: (id: string | number, options?: {
+            validate?: ((entity: T) => any) | undefined;
+            transaction?: Transaction | undefined;
+        } | undefined) => Promise<(T & {
+            _id: string | number;
+        }) | undefined>;
+        batchGet: (ids: (string | number)[], options?: {
+            validate?: ((entities: T[]) => any) | undefined;
+            transaction?: Transaction | undefined;
+        } | undefined) => Promise<T[]>;
+        query: (queryOptions?: QueryOptions | undefined, options?: {
+            validate?: ((entities: T[]) => any) | undefined;
+            transaction?: Transaction | undefined;
+        } | undefined) => Promise<T[]>;
+        update: (id: string | number, update: Partial<Omit<T, "_id">> | ((entity: T) => Partial<Omit<T, "_id">>), options?: {
+            validate?: ((entity: T) => any) | undefined;
+            transaction?: Transaction | undefined;
+        } | undefined) => Promise<T>;
+        batchUpdate: (ids: (string | number)[], update: (entity: T) => T, options?: {
+            validate?: ((entities: T[]) => any) | undefined;
+            transaction?: Transaction | undefined;
+        } | undefined) => Promise<T[]>;
+        destroy: (id: string | number, options?: {
+            validate?: ((entity: T) => any) | undefined;
+            transaction?: Transaction | undefined;
+        } | undefined) => Promise<{
+            message: string;
+        }>;
+        batchDestroy: (ids: (string | number)[], options?: {
+            validate?: ((entities: T[]) => any) | undefined;
+            transaction?: Transaction | undefined;
+        } | undefined) => Promise<{
+            message: string;
+        }>;
+    };
+    withTransaction: (fn: (transaction: Transaction) => Promise<void>) => Promise<void>;
 };
 export {};

@@ -20,60 +20,11 @@ export type QueryOptions = {
   select?: string[];
 };
 
-export type OrmTransaction<T> = {
-  transaction: Transaction;
-  create: (
-    data: Omit<T, "_id">,
-    id?: string,
-    validate?: ((entity: Omit<T, "_id">) => any) | undefined
-  ) => void;
-  get: (
-    id: string | number,
-    validate?: (entity: T) => void
-  ) => Promise<T | undefined>;
-  query: (
-    options?: QueryOptions,
-    validate?: (entities: T[]) => void
-  ) => Promise<T[]>;
-  update: (
-    id: string | number,
-    update: Partial<Omit<T, "_id">> | ((entity: T) => Partial<Omit<T, "_id">>),
-    validate?: ((entity: T) => any) | undefined
-  ) => void;
-  destroy: (id: string | number, validate?: (entity: T) => void) => void;
-};
-
-export type OrmModel<T> = {
-  create: (
-    data: Omit<T, "_id">,
-    id?: string,
-    validate?: ((entity: Omit<T, "_id">) => any) | undefined
-  ) => Promise<T>;
-  get: (
-    id: string | number,
-    validate?: (entity: T) => void
-  ) => Promise<T | undefined>;
-  query: (
-    options?: QueryOptions,
-    validate?: (entities: T[]) => void
-  ) => Promise<T[]>;
-  update: (
-    id: string | number,
-    update: Partial<Omit<T, "_id">> | ((entity: T) => Partial<Omit<T, "_id">>),
-    validate?: ((entity: T) => any) | undefined
-  ) => Promise<T>;
-  destroy: (
-    id: string | number,
-    validate?: (entity: T) => void
-  ) => Promise<any>;
-  transaction: (
-    func: (transaction: OrmTransaction<T>) => void
-  ) => Promise<void>;
-};
-
 function getId(data: any): string | number {
+  //used for creation and updates
+  //items created with an id will not have a key in the mutationResult
   if (data.mutationResults) {
-    return data.mutationResults?.[0].key?.path?.[0].id;
+    return Number(data.mutationResults?.[0].key?.path?.[0].id);
   }
   return Number(data[Datastore.KEY].id) || data[Datastore.KEY].name;
 }
@@ -88,13 +39,12 @@ export default function createORM(options?: {
   projectId: string;
   keyFilename: string;
 }) {
-  //@ts-ignore
   const store = new Datastore(options);
 
   function createModel<T extends { _id: string | number }>(
     kind: string,
     options?: ModelOptions
-  ): OrmModel<T> {
+  ) {
     async function retry<U>(fn: () => Promise<U>) {
       if (options?.disableRetry) return fn();
       return callWithRetry(fn, {
@@ -107,12 +57,23 @@ export default function createORM(options?: {
 
     async function create(
       data: Omit<T, "_id">,
-      id?: string,
-      validate?: (entity: Omit<T, "_id">) => any
+      options?: {
+        id?: string;
+        validate?: (entity: Omit<T, "_id">) => any;
+        transaction?: Transaction;
+      }
     ): Promise<T> {
-      const key = id ? store.key([kind, id]) : store.key(kind);
+      const key = options?.id ? store.key([kind, options.id]) : store.key(kind);
 
-      validate?.(data);
+      options?.validate?.(data);
+
+      if (options?.transaction) {
+        options.transaction.save({
+          key,
+          data,
+        });
+        return { ...data, _id: options?.id || "" } as T;
+      }
 
       const [response] = await retry(() =>
         store.save({
@@ -121,7 +82,7 @@ export default function createORM(options?: {
         })
       );
 
-      const _id = id || getId(response);
+      const _id = options?.id || getId(response);
 
       if (!_id) throw "entity is missing it's id";
 
@@ -130,11 +91,16 @@ export default function createORM(options?: {
 
     async function get(
       id: string | number,
-      validate?: (entity: T) => any
-    ): Promise<T | undefined> {
+      options?: {
+        validate?: (entity: T) => any;
+        transaction?: Transaction;
+      }
+    ) {
       const key = store.key([kind, id]);
 
-      const [entity] = await retry(() => store.get(key));
+      const _store = options?.transaction || store;
+
+      const [entity] = await retry(() => _store.get(key));
 
       if (!entity) return undefined;
 
@@ -142,41 +108,69 @@ export default function createORM(options?: {
 
       const entityWithId = { ...(entity as T), _id };
 
-      validate?.(entityWithId);
+      options?.validate?.(entityWithId);
 
       return entityWithId;
     }
 
+    //order of the ids may not match result order
+    async function batchGet(
+      ids: (string | number)[],
+      options?: {
+        validate?: (entities: T[]) => any;
+        transaction?: Transaction;
+      }
+    ) {
+      const keys = ids.map(id => store.key([kind, id]));
+
+      const _store = options?.transaction || store;
+
+      const [entities] = await retry(() => _store.get(keys));
+
+      const entitiesWithIds: T[] = entities.map((entity: any) => ({
+        ...entity,
+        _id: getId(entity),
+      }));
+
+      options?.validate?.(entitiesWithIds);
+
+      return entitiesWithIds;
+    }
+
     //TODO need to add a way to use the cursor with limit
     async function query(
-      options?: QueryOptions,
-      validate?: (entities: T[]) => any
+      queryOptions?: QueryOptions,
+      options?: {
+        validate?: (entities: T[]) => any;
+        transaction?: Transaction;
+      }
     ): Promise<T[]> {
-      const query = store.createQuery(kind);
+      const _store = options?.transaction || store;
+      const query = _store.createQuery(kind);
 
       //filters
-      options?.filters?.forEach(([field, operator, value]) => {
+      queryOptions?.filters?.forEach(([field, operator, value]) => {
         query.filter(field, operator, value);
       });
 
       //orders
-      options?.orders?.forEach(({ field, descending }) => {
+      queryOptions?.orders?.forEach(({ field, descending }) => {
         query.order(field, { descending });
       });
 
       //limit
-      if (options?.limit) query.limit(options.limit);
+      if (queryOptions?.limit) query.limit(queryOptions.limit);
 
       //select
-      if (options?.select) query.select(options.select);
+      if (queryOptions?.select) query.select(queryOptions.select);
 
-      const [entities] = await retry(() => store.runQuery(query));
+      const [entities] = await retry(() => _store.runQuery(query));
       const entitiesWithIds = entities.map(entity => ({
         ...entity,
         _id: getId(entity),
       }));
 
-      validate?.(entitiesWithIds);
+      options?.validate?.(entitiesWithIds);
 
       return entitiesWithIds;
     }
@@ -186,175 +180,146 @@ export default function createORM(options?: {
       update:
         | Partial<Omit<T, "_id">>
         | ((entity: T) => Partial<Omit<T, "_id">>),
-      validate?: (entity: T) => any
+      options?: {
+        validate?: (entity: T) => any;
+        transaction?: Transaction;
+      }
     ): Promise<T> {
-      //TODO should we proactively strip the id
       const key = store.key([kind, id]);
 
-      const entity = await retry(() => get(id));
+      //any validation is passed to the get
+      const entity = await retry(() => get(id, options));
 
       if (!entity) throw "entity not found";
-
-      validate?.(entity);
 
       const parsedUpdate =
         typeof update === "function" ? update(entity) : update;
 
       const { _id, ...data } = entity;
 
-      await retry(() =>
-        store.save({
+      if (options?.transaction) {
+        options.transaction.save({
           key,
           data: { ...data, ...parsedUpdate },
-        })
-      );
+        });
+      } else {
+        await retry(() =>
+          store.save({
+            key,
+            data: { ...data, ...parsedUpdate },
+          })
+        );
+      }
 
       return { ...data, ...parsedUpdate, _id: id } as T;
     }
 
-    async function destroy(id: string | number, validate?: (entity: T) => any) {
+    async function batchUpdate(
+      ids: (string | number)[],
+      update: (entity: T) => T,
+      options?: {
+        validate?: (entities: T[]) => any;
+        transaction?: Transaction;
+      }
+    ) {
+      const keys = ids.map(id => store.key([kind, id]));
+
+      //any validation is passed to the get
+      const entities = await retry(() => batchGet(ids, options));
+
+      if (!entities || entities.length === 0) throw "no entities found";
+
+      const updatedEntities = entities.map(update);
+      const saveArray = updatedEntities.map(({ _id, ...data }) => ({
+        key: store.key([kind, _id]),
+        data,
+      }));
+
+      if (options?.transaction) {
+        options.transaction.save(saveArray);
+      } else {
+        await retry(() => store.save(saveArray));
+      }
+
+      return updatedEntities;
+    }
+
+    async function destroy(
+      id: string | number,
+      options?: {
+        validate?: (entity: T) => any;
+        transaction?: Transaction;
+      }
+    ) {
       const key = store.key([kind, id]);
 
-      const entity = await retry(() => get(id));
+      //any validation is passed to the get
+      const entity = await retry(() => get(id, options));
 
       if (!entity) throw "entity not found";
 
-      validate?.(entity);
-
-      await retry(() => store.delete(key));
+      if (options?.transaction) {
+        options.transaction.delete(key);
+      } else {
+        await retry(() => store.delete(key));
+      }
 
       return { message: "delete successful" };
     }
 
-    async function transaction(func: (transaction: OrmTransaction<T>) => void) {
-      const transaction = store.transaction();
+    async function batchDestroy(
+      ids: (string | number)[],
+      options?: {
+        validate?: (entities: T[]) => any;
+        transaction?: Transaction;
+      }
+    ) {
+      const keys = ids.map(id => store.key([kind, id]));
 
-      function create(
-        data: Omit<T, "_id">,
-        id?: string,
-        validate?: (entity: Omit<T, "_id">) => any
-      ) {
-        const key = id ? store.key([kind, id]) : store.key(kind);
+      //any validation is passed to the get
+      const entities = await retry(() => batchGet(ids, options));
 
-        validate?.(data);
+      if (!entities || entities.length === 0) throw "no entities found";
 
-        return transaction.save({
-          key,
-          data,
-        });
+      if (options?.transaction) {
+        options.transaction.delete(keys);
+      } else {
+        await retry(() => store.delete(keys));
       }
 
-      async function get(
-        id: string | number,
-        validate?: (entity: T) => any
-      ): Promise<T | undefined> {
-        const key = store.key([kind, id]);
-
-        const [entity] = await transaction.get(key);
-
-        if (!entity) return undefined;
-
-        const _id = getId(entity);
-
-        const entityWithId = { ...entity, _id };
-
-        validate?.(entityWithId);
-
-        return entityWithId;
-      }
-
-      async function query(
-        options?: QueryOptions,
-        validate?: (entities: T[]) => any
-      ): Promise<T[]> {
-        const query = transaction.createQuery(kind);
-
-        //filters
-        options?.filters?.forEach(([field, operator, value]) => {
-          query.filter(field, operator, value);
-        });
-
-        //orders
-        options?.orders?.forEach(({ field, descending }) => {
-          query.order(field, { descending });
-        });
-
-        //limit
-        if (options?.limit) query.limit(options?.limit);
-
-        //select
-        if (options?.select) query.select(options.select);
-
-        const [entities] = await transaction.runQuery(query);
-
-        const entitiesWithIds = entities.map(entity => ({
-          ...entity,
-          id: getId(entity),
-        }));
-
-        validate?.(entitiesWithIds);
-
-        return entitiesWithIds;
-      }
-
-      async function update(
-        id: string | number,
-        update:
-          | Partial<Omit<T, "_id">>
-          | ((entity: T) => Partial<Omit<T, "_id">>),
-        validate?: (entity: T) => any
-      ) {
-        const key = store.key([kind, id]);
-
-        const entity = await get(id);
-
-        if (!entity) throw "entity not found";
-
-        validate?.(entity);
-
-        const parsedUpdate =
-          typeof update === "function" ? update(entity) : update;
-
-        const { _id, ...data } = entity;
-
-        return transaction.save({
-          key,
-          data: { ...data, ...parsedUpdate },
-        });
-      }
-
-      async function destroy(
-        id: string | number,
-        validate?: (entity: T) => any
-      ) {
-        const key = store.key([kind, id]);
-
-        const entity = await get(id);
-
-        if (!entity) throw "entity not found";
-
-        validate?.(entity);
-
-        return transaction.delete(key);
-      }
-
-      retry(async () => {
-        try {
-          await transaction.run();
-          func({ transaction, create, get, query, update, destroy });
-          await transaction.commit();
-        } catch (error) {
-          await transaction.rollback();
-          throw error;
-        }
-      });
-      return;
+      return { message: "delete successful" };
     }
 
-    return { create, get, query, update, transaction, destroy };
+    return {
+      create,
+      get,
+      batchGet,
+      query,
+      update,
+      batchUpdate,
+      destroy,
+      batchDestroy,
+    };
+  }
+
+  async function withTransaction(
+    fn: (transaction: Transaction) => Promise<void>
+  ) {
+    const transaction = store.transaction();
+    try {
+      await transaction.run();
+
+      await fn(transaction);
+
+      await transaction.commit();
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
   }
 
   return {
     createModel,
+    withTransaction,
   };
 }
