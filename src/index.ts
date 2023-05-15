@@ -17,7 +17,7 @@ export type QueryOptions<T> = {
   filters?: QueryFilter<T>[];
   orders?: QueryOrder<T>[];
   limit?: number;
-  select?: keyof T | "__key__"[];
+  select?: (keyof T | "__key__")[];
 };
 
 function getId(data: any): string | number {
