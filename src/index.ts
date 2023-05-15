@@ -2,22 +2,22 @@ import type { Transaction } from "@google-cloud/datastore";
 import { Datastore } from "@google-cloud/datastore";
 import { callWithRetry } from "./utils";
 
-export type QueryFilter = [
-  string,
+export type QueryFilter<T> = [
+  keyof T,
   "=" | "<" | "<=" | ">" | ">=",
   string | number
 ];
 
-export type QueryOrder = {
-  field: string;
+export type QueryOrder<T> = {
+  field: keyof T;
   descending?: boolean;
 };
 
-export type QueryOptions = {
-  filters?: QueryFilter[];
-  orders?: QueryOrder[];
+export type QueryOptions<T> = {
+  filters?: QueryFilter<T>[];
+  orders?: QueryOrder<T>[];
   limit?: number;
-  select?: string[];
+  select?: keyof T | "__key__"[];
 };
 
 function getId(data: any): string | number {
@@ -139,7 +139,7 @@ export default function createORM(options?: {
 
     //TODO need to add a way to use the cursor with limit
     async function query(
-      queryOptions?: QueryOptions,
+      queryOptions?: QueryOptions<T>,
       options?: {
         validate?: (entities: T[]) => any;
         transaction?: Transaction;
@@ -150,19 +150,19 @@ export default function createORM(options?: {
 
       //filters
       queryOptions?.filters?.forEach(([field, operator, value]) => {
-        query.filter(field, operator, value);
+        query.filter(field as string, operator, value);
       });
 
       //orders
       queryOptions?.orders?.forEach(({ field, descending }) => {
-        query.order(field, { descending });
+        query.order(field as string, { descending });
       });
 
       //limit
       if (queryOptions?.limit) query.limit(queryOptions.limit);
 
       //select
-      if (queryOptions?.select) query.select(queryOptions.select);
+      if (queryOptions?.select) query.select(queryOptions.select as string[]);
 
       const [entities] = await retry(() => _store.runQuery(query));
       const entitiesWithIds = entities.map(entity => ({

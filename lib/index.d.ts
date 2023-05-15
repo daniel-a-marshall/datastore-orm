@@ -1,20 +1,20 @@
 import type { Transaction } from "@google-cloud/datastore";
-export declare type QueryFilter = [
-    string,
+export type QueryFilter<T> = [
+    keyof T,
     "=" | "<" | "<=" | ">" | ">=",
     string | number
 ];
-export declare type QueryOrder = {
-    field: string;
+export type QueryOrder<T> = {
+    field: keyof T;
     descending?: boolean;
 };
-export declare type QueryOptions = {
-    filters?: QueryFilter[];
-    orders?: QueryOrder[];
+export type QueryOptions<T> = {
+    filters?: QueryFilter<T>[];
+    orders?: QueryOrder<T>[];
     limit?: number;
-    select?: string[];
+    select?: keyof T | "__key__"[];
 };
-declare type ModelOptions = {
+type ModelOptions = {
     disableRetry?: boolean;
     retries?: number;
     backoff?: number;
@@ -25,7 +25,7 @@ export default function createORM(options?: {
 }): {
     createModel: <T extends {
         _id: string | number;
-    }>(kind: string, options?: ModelOptions | undefined) => {
+    }>(kind: string, options?: ModelOptions) => {
         create: (data: Omit<T, "_id">, options?: {
             id?: string | undefined;
             validate?: ((entity: Omit<T, "_id">) => any) | undefined;
@@ -41,7 +41,7 @@ export default function createORM(options?: {
             validate?: ((entities: T[]) => any) | undefined;
             transaction?: Transaction | undefined;
         } | undefined) => Promise<T[]>;
-        query: (queryOptions?: QueryOptions | undefined, options?: {
+        query: (queryOptions?: QueryOptions<T> | undefined, options?: {
             validate?: ((entities: T[]) => any) | undefined;
             transaction?: Transaction | undefined;
         } | undefined) => Promise<T[]>;
