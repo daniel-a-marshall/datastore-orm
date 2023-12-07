@@ -1,5 +1,5 @@
 import type { Transaction } from "@google-cloud/datastore";
-import { Datastore } from "@google-cloud/datastore";
+import { Datastore, PropertyFilter } from "@google-cloud/datastore";
 import { callWithRetry } from "./utils";
 
 export type QueryFilter<T> = [
@@ -121,7 +121,7 @@ export default function createORM(options?: {
         transaction?: Transaction;
       }
     ) {
-      const keys = ids.map(id => store.key([kind, id]));
+      const keys = ids.map((id) => store.key([kind, id]));
 
       const _store = options?.transaction || store;
 
@@ -150,7 +150,7 @@ export default function createORM(options?: {
 
       //filters
       queryOptions?.filters?.forEach(([field, operator, value]) => {
-        query.filter(field as string, operator, value);
+        query.filter(new PropertyFilter(field as string, operator, value));
       });
 
       //orders
@@ -165,7 +165,7 @@ export default function createORM(options?: {
       if (queryOptions?.select) query.select(queryOptions.select as string[]);
 
       const [entities] = await retry(() => _store.runQuery(query));
-      const entitiesWithIds = entities.map(entity => ({
+      const entitiesWithIds = entities.map((entity) => ({
         ...entity,
         _id: getId(entity),
       }));
@@ -222,7 +222,7 @@ export default function createORM(options?: {
         transaction?: Transaction;
       }
     ) {
-      const keys = ids.map(id => store.key([kind, id]));
+      const keys = ids.map((id) => store.key([kind, id]));
 
       //any validation is passed to the get
       const entities = await retry(() => batchGet(ids, options));
@@ -274,7 +274,7 @@ export default function createORM(options?: {
         transaction?: Transaction;
       }
     ) {
-      const keys = ids.map(id => store.key([kind, id]));
+      const keys = ids.map((id) => store.key([kind, id]));
 
       //any validation is passed to the get
       const entities = await retry(() => batchGet(ids, options));
